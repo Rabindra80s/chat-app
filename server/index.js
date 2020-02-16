@@ -1,11 +1,18 @@
 const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+
+//Port from environment variable or default - 5000
+const port = process.env.PORT || 5000;
+
+//Setting up express and adding socketIo middleware
 const app = express();
-const http = require('http').Server(app);
+const server = http.createServer(app);
+const io = socketIo(server);
+
 const path = require('path');
-const io = require('socket.io')(http);
 
 const uri = process.env.MONGODB_URI;
-const port = process.env.PORT || 5000;
 
 const Message = require('./Message');
 const mongoose = require('mongoose');
@@ -17,7 +24,9 @@ mongoose.connect(uri, {
 
 app.use(express.static(path.join(__dirname, '..', 'client', 'build')));
 
+//Setting up a socket with the namespace "connection" for new sockets
 io.on('connection', (socket) => {
+    console.log("New client connection");
 
     // Get the last 10 messages from the database.
     Message.find().sort({ createdAt: -1 }).limit(10).exec((err, messages) => {
@@ -27,9 +36,9 @@ io.on('connection', (socket) => {
         socket.emit('init', messages);
     });
 
-    // Listen to connected users for a new message.
+    //Here we listen on a new namespace called "incoming message"
     socket.on('message', (msg) => {
-        // Create a message with the content and the name of the user.
+        // Create a message with the content and the name of the socket/user.
         const message = new Message({
             content: msg.content,
             name: msg.name,
@@ -40,11 +49,12 @@ io.on('connection', (socket) => {
             if (err) return console.error(err);
         });
 
-        // Notify all other users about a new message.
+        // Notify all other sockets/users about a new message EXCLUDING the socket/user which sent us the message.
         socket.broadcast.emit('push', msg);
     });
+
+    //A special namespace "disconnect" for when a client disconnects
+    socket.on("disconnect", () => console.log("Client disconnected"));
 });
 
-http.listen(port, () => {
-    console.log('listening on *:' + port);
-});
+server.listen(port, () => console.log(`listening on *:' + port`));
